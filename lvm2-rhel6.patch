@@ -1,0 +1,18 @@
+ scripts/clvmd_init_red_hat.in |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/scripts/clvmd_init_red_hat.in b/scripts/clvmd_init_red_hat.in
+index da09a34..cff8122 100644
+--- a/scripts/clvmd_init_red_hat.in
++++ b/scripts/clvmd_init_red_hat.in
+@@ -9,8 +9,8 @@
+ #
+ ### BEGIN INIT INFO
+ # Provides:		clvmd
+-# Required-Start:	$local_fs
+-# Required-Stop:	$local_fs
++# Required-Start:	$local_fs cman
++# Required-Stop:	$local_fs cman
+ # Short-Description:	This service is Clusterd LVM Daemon.
+ # Description:		Cluster daemon for userland logical volume management tools.
+ ### END INIT INFO

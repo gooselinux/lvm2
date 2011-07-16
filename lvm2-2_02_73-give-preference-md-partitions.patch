@@ -1,0 +1,163 @@
+ WHATS_NEW                  |    1 +
+ lib/commands/toolcontext.c |    2 ++
+ lib/commands/toolcontext.h |    2 +-
+ lib/device/device.c        |    2 +-
+ lib/device/device.h        |    2 +-
+ lib/filters/filter.c       |   10 ++++++++++
+ lib/misc/lvm-globals.c     |   12 ++++++++++++
+ lib/misc/lvm-globals.h     |    2 ++
+ 8 files changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index b458292..c60caae 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.73 -
+ ================================
++  Recognise and give preference to md device partitions (blkext major).
+   Split-mirror operations were ignoring user-specified PVs.
+   Never scan internal LVM devices.
+   Fix data corruption bug in cluster mirrors.
+diff --git a/lib/commands/toolcontext.c b/lib/commands/toolcontext.c
+index 7c5e379..0cf5b8c 100644
+--- a/lib/commands/toolcontext.c
++++ b/lib/commands/toolcontext.c
+@@ -240,7 +240,9 @@ static int _process_config(struct cmd_context *cmd)
+ 		cmd->proc_dir[0] = '\0';
+ 	}
+ 
++	/* FIXME Use global value of sysfs_dir everywhere instead cmd->sysfs_dir. */
+ 	_get_sysfs_dir(cmd);
++	set_sysfs_dir_path(cmd->sysfs_dir);
+ 
+ 	/* activation? */
+ 	cmd->default_settings.activation = find_config_tree_int(cmd,
+diff --git a/lib/commands/toolcontext.h b/lib/commands/toolcontext.h
+index 94f7f12..d0ff12a 100644
+--- a/lib/commands/toolcontext.h
++++ b/lib/commands/toolcontext.h
+@@ -95,7 +95,7 @@ struct cmd_context {
+ 	char system_dir[PATH_MAX];
+ 	char dev_dir[PATH_MAX];
+ 	char proc_dir[PATH_MAX];
+-	char sysfs_dir[PATH_MAX];
++	char sysfs_dir[PATH_MAX]; /* FIXME Use global value instead. */
+ };
+ 
+ /*
+diff --git a/lib/device/device.c b/lib/device/device.c
+index 7f9f40c..593e642 100644
+--- a/lib/device/device.c
++++ b/lib/device/device.c
+@@ -278,7 +278,7 @@ int _get_partition_type(struct dev_mgr *dm, struct device *d)
+ #ifdef linux
+ 
+ int get_primary_dev(const char *sysfs_dir,
+-		    struct device *dev, dev_t *result)
++		    const struct device *dev, dev_t *result)
+ {
+ 	char path[PATH_MAX+1];
+ 	char temp_path[PATH_MAX+1];
+diff --git a/lib/device/device.h b/lib/device/device.h
+index 4ccf9a9..8bf33e6 100644
+--- a/lib/device/device.h
++++ b/lib/device/device.h
+@@ -101,7 +101,7 @@ unsigned long dev_md_stripe_width(const char *sysfs_dir, struct device *dev);
+ int is_partitioned_dev(struct device *dev);
+ 
+ int get_primary_dev(const char *sysfs_dir,
+-		    struct device *dev, dev_t *result);
++		    const struct device *dev, dev_t *result);
+ 
+ unsigned long dev_alignment_offset(const char *sysfs_dir,
+ 				   struct device *dev);
+diff --git a/lib/filters/filter.c b/lib/filters/filter.c
+index 0cc7e07..6b54ed8 100644
+--- a/lib/filters/filter.c
++++ b/lib/filters/filter.c
+@@ -59,6 +59,8 @@ int blkext_major(void)
+ 
+ int dev_subsystem_part_major(const struct device *dev)
+ {
++	dev_t primary_dev;
++
+ 	if (MAJOR(dev->dev) == -1)
+ 		return 0;
+ 
+@@ -68,6 +70,11 @@ int dev_subsystem_part_major(const struct device *dev)
+ 	if (MAJOR(dev->dev) == _drbd_major)
+ 		return 1;
+ 
++	if ((MAJOR(dev->dev) == _blkext_major) &&
++	    (get_primary_dev(sysfs_dir_path(), dev, &primary_dev)) &&
++	    (MAJOR(primary_dev) == _md_major))
++		return 1;
++
+ 	return 0;
+ }
+ 
+@@ -79,6 +86,9 @@ const char *dev_subsystem_name(const struct device *dev)
+ 	if (MAJOR(dev->dev) == _drbd_major)
+ 		return "DRBD";
+ 
++	if (MAJOR(dev->dev) == _blkext_major)
++		return "BLKEXT";
++
+ 	return "";
+ }
+ 
+diff --git a/lib/misc/lvm-globals.c b/lib/misc/lvm-globals.c
+index 8dc2b02..795dd54 100644
+--- a/lib/misc/lvm-globals.c
++++ b/lib/misc/lvm-globals.c
+@@ -40,6 +40,7 @@ static int _ignore_suspended_devices = 0;
+ static int _error_message_produced = 0;
+ static unsigned _is_static = 0;
+ static int _udev_checking = 1;
++static char _sysfs_dir_path[PATH_MAX] = "";
+ 
+ void init_verbose(int level)
+ {
+@@ -127,6 +128,12 @@ void set_cmd_name(const char *cmd)
+ 	_cmd_name[sizeof(_cmd_name) - 1] = '\0';
+ }
+ 
++void set_sysfs_dir_path(const char *path)
++{
++	strncpy(_sysfs_dir_path, path, sizeof(_sysfs_dir_path));
++	_sysfs_dir_path[sizeof(_sysfs_dir_path) - 1] = '\0';
++}
++
+ const char *log_command_name()
+ {
+ 	if (!_log_cmd_name)
+@@ -224,3 +231,8 @@ int udev_checking(void)
+ {
+ 	return _udev_checking;
+ }
++
++const char *sysfs_dir_path()
++{
++	return _sysfs_dir_path;
++}
+diff --git a/lib/misc/lvm-globals.h b/lib/misc/lvm-globals.h
+index 0134c32..507393c 100644
+--- a/lib/misc/lvm-globals.h
++++ b/lib/misc/lvm-globals.h
+@@ -39,6 +39,7 @@ void init_is_static(unsigned value);
+ void init_udev_checking(int checking);
+ 
+ void set_cmd_name(const char *cmd_name);
++void set_sysfs_dir_path(const char *path);
+ 
+ int test_mode(void);
+ int md_filtering(void);
+@@ -56,6 +57,7 @@ int ignore_suspended_devices(void);
+ const char *log_command_name(void);
+ unsigned is_static(void);
+ int udev_checking(void);
++const char *sysfs_dir_path(void);
+ 
+ #define DMEVENTD_MONITOR_IGNORE -1
+ int dmeventd_monitor_mode(void);

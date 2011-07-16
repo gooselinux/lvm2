@@ -1,0 +1,49 @@
+ WHATS_NEW                |    1 +
+ test/t-snapshot-merge.sh |    2 ++
+ tools/lvconvert.c        |    7 ++++++-
+ 3 files changed, 9 insertions(+), 1 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 4a2e54a..05a8d5b 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.73 -
+ ================================
++  Require logical volume(s) to be explicitly named for lvconvert --merge.
+   Disallow 'mirrored' log type for cluster mirrors.
+ 
+ Version 2.02.72 - 28th July 2010  [CVE-2010-2526]
+diff --git a/test/t-snapshot-merge.sh b/test/t-snapshot-merge.sh
+index 982e065..72d96da 100755
+--- a/test/t-snapshot-merge.sh
++++ b/test/t-snapshot-merge.sh
+@@ -49,6 +49,8 @@ setup_merge $vg $lv1
+ # now that snapshot LV is created: test if snapshot-merge target is available
+ $(dmsetup targets | grep -q snapshot-merge) || exit 200
+ lvs -a
++# make sure lvconvert --merge requires explicit LV listing
++not lvconvert --merge 2>err
+ lvconvert --merge $vg/$(snap_lv_name_ $lv1)
+ lvremove -f $vg/$lv1
+ 
+diff --git a/tools/lvconvert.c b/tools/lvconvert.c
+index e66654e..5f8799d 100644
+--- a/tools/lvconvert.c
++++ b/tools/lvconvert.c
+@@ -1732,9 +1732,14 @@ int lvconvert(struct cmd_context * cmd, int argc, char **argv)
+ 		return EINVALID_CMD_LINE;
+ 	}
+ 
+-	if (lp.merge)
++	if (lp.merge) {
++		if (!argc) {
++			log_error("Please provide logical volume path");
++			return EINVALID_CMD_LINE;
++		}
+ 		return process_each_lv(cmd, argc, argv, READ_FOR_UPDATE, &lp,
+ 				       &lvconvert_merge_single);
++	}
+ 
+ 	return lvconvert_single(cmd, &lp);
+ }

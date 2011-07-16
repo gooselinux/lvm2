@@ -1,0 +1,61 @@
+ WHATS_NEW_DM           |    1 +
+ libdm/regex/matcher.c  |    2 +-
+ libdm/regex/parse_rx.c |    2 +-
+ libdm/regex/ttree.c    |    6 +++---
+ 4 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/WHATS_NEW_DM b/WHATS_NEW_DM
+index 8a8298d..d7739c4 100644
+--- a/WHATS_NEW_DM
++++ b/WHATS_NEW_DM
+@@ -1,5 +1,6 @@
+ Version 1.02.54 -
+ ================================
++  Fix segfault in regex matcher with characters of ordinal value > 127.
+   Use built-in rule for device aliases: block/ < dm- < disk/ < mapper/ < other.
+ 
+ Version 1.02.53 - 28th July 2010
+diff --git a/libdm/regex/matcher.c b/libdm/regex/matcher.c
+index 949b5f4..a88c048 100644
+--- a/libdm/regex/matcher.c
++++ b/libdm/regex/matcher.c
+@@ -375,7 +375,7 @@ static struct dfa_state *_step_matcher(struct dm_regex *m, int c, struct dfa_sta
+         struct dfa_state *ns;
+ 
+         if (!(ns = cs->lookup[(unsigned char) c]))
+-                _calc_state(m, cs, c);
++                _calc_state(m, cs, (unsigned char) c);
+ 
+ 	if (!(ns = cs->lookup[(unsigned char) c]))
+ 		return NULL;
+diff --git a/libdm/regex/parse_rx.c b/libdm/regex/parse_rx.c
+index 56260f5..9f3e164 100644
+--- a/libdm/regex/parse_rx.c
++++ b/libdm/regex/parse_rx.c
+@@ -271,7 +271,7 @@ static int _rx_get_token(struct parse_sp *ps)
+ 		ps->type = 0;
+ 		ps->cursor = ptr + 1;
+ 		dm_bit_clear_all(ps->charset);
+-		dm_bit_set(ps->charset, (int) *ptr);
++		dm_bit_set(ps->charset, (int) (unsigned char) *ptr);
+ 		break;
+ 	}
+ 
+diff --git a/libdm/regex/ttree.c b/libdm/regex/ttree.c
+index 5aa1ba6..ec97c98 100644
+--- a/libdm/regex/ttree.c
++++ b/libdm/regex/ttree.c
+@@ -91,10 +91,10 @@ int ttree_insert(struct ttree *tt, unsigned int *key, void *data)
+ 				return 0;
+ 			}
+ 
+-			k = *key++;
+-
+-			if (count)
++			if (count) {
++				k = *key++;
+ 				c = &((*c)->m);
++			}
+ 		}
+ 	}
+ 	(*c)->data = data;

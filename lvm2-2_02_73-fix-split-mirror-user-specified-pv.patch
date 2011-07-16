@@ -1,0 +1,76 @@
+ WHATS_NEW             |    1 +
+ lib/metadata/mirror.c |   30 +++++++++---------------------
+ tools/lvconvert.c     |    2 +-
+ 3 files changed, 11 insertions(+), 22 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 84cae6e..b458292 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.73 -
+ ================================
++  Split-mirror operations were ignoring user-specified PVs.
+   Never scan internal LVM devices.
+   Fix data corruption bug in cluster mirrors.
+   Require logical volume(s) to be explicitly named for lvconvert --merge.
+diff --git a/lib/metadata/mirror.c b/lib/metadata/mirror.c
+index 4f926e1..55a9288 100644
+--- a/lib/metadata/mirror.c
++++ b/lib/metadata/mirror.c
+@@ -524,34 +524,22 @@ static int _move_removable_mimages_to_end(struct logical_volume *lv,
+ 					  uint32_t count,
+ 					  struct dm_list *removable_pvs)
+ {
+-	int i, images;
++	int i;
+ 	struct logical_volume *sub_lv;
+ 	struct lv_segment *mirrored_seg = first_seg(lv);
+ 
+ 	if (!removable_pvs)
+ 		return 1;
+ 
+-	/*
+-	 * When we shift an image to the end, we must start from
+-	 * the begining of the list again.  We must visit the
+-	 * images up to the last one we just moved.
+-	 */
+-	for (images = mirrored_seg->area_count; images && count; images--) {
+-		for (i = 0; i < images; i++) {
+-			sub_lv = seg_lv(mirrored_seg, i);
++	for (i = mirrored_seg->area_count - 1; (i >= 0) && count; i--) {
++		sub_lv = seg_lv(mirrored_seg, i);
+ 
+-			if (!is_temporary_mirror_layer(sub_lv) &&
+-			    is_mirror_image_removable(sub_lv, removable_pvs)) {
+-				if (!shift_mirror_images(mirrored_seg, i))
+-					return_0;
+-				count--;
+-				break;
+-			}
++		if (!is_temporary_mirror_layer(sub_lv) &&
++		    is_mirror_image_removable(sub_lv, removable_pvs)) {
++			if (!shift_mirror_images(mirrored_seg, i))
++				return_0;
++			count--;
+ 		}
+-
+-		/* Did we shift any images? */
+-		if (i == images)
+-			return 0;
+ 	}
+ 
+ 	return !count;
+diff --git a/tools/lvconvert.c b/tools/lvconvert.c
+index 5f8799d..daef451 100644
+--- a/tools/lvconvert.c
++++ b/tools/lvconvert.c
+@@ -1011,7 +1011,7 @@ static int _lvconvert_mirrors_aux(struct cmd_context *cmd,
+ 						  lv->le_count,
+ 						  lp->region_size);
+ 
+-	if (!operable_pvs && !lp->keep_mimages)
++	if (!operable_pvs)
+ 		operable_pvs = lp->pvh;
+ 
+ 	seg = first_seg(lv);

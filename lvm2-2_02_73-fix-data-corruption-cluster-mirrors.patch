@@ -1,0 +1,28 @@
+ WHATS_NEW                    |    1 +
+ daemons/cmirrord/functions.c |    2 +-
+ 2 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 05a8d5b..33d00ae 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.73 -
+ ================================
++  Fix data corruption bug in cluster mirrors.
+   Require logical volume(s) to be explicitly named for lvconvert --merge.
+   Disallow 'mirrored' log type for cluster mirrors.
+ 
+diff --git a/daemons/cmirrord/functions.c b/daemons/cmirrord/functions.c
+index 2ecd6b3..9917625 100644
+--- a/daemons/cmirrord/functions.c
++++ b/daemons/cmirrord/functions.c
+@@ -106,7 +106,7 @@ static DM_LIST_INIT(log_pending_list);
+ 
+ static int log_test_bit(dm_bitset_t bs, int bit)
+ {
+-	return dm_bit(bs, bit);
++	return dm_bit(bs, bit) ? 1 : 0;
+ }
+ 
+ static void log_set_bit(struct log_c *lc, dm_bitset_t bs, int bit)

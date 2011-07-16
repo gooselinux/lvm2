@@ -1,0 +1,65 @@
+ WHATS_NEW                       |    1 +
+ lib/activate/dev_manager.c      |   11 ++++++++---
+ lib/filters/filter-persistent.c |    4 ++--
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 33d00ae..84cae6e 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.73 -
+ ================================
++  Never scan internal LVM devices.
+   Fix data corruption bug in cluster mirrors.
+   Require logical volume(s) to be explicitly named for lvconvert --merge.
+   Disallow 'mirrored' log type for cluster mirrors.
+diff --git a/lib/activate/dev_manager.c b/lib/activate/dev_manager.c
+index 7de341e..a180f1c 100644
+--- a/lib/activate/dev_manager.c
++++ b/lib/activate/dev_manager.c
+@@ -153,12 +153,17 @@ int device_is_usable(struct device *dev)
+ 	if (!dm_task_get_info(dmt, &info))
+ 		goto_out;
+ 
+-	if (!info.exists || info.suspended)
++	if (!info.exists)
+ 		goto out;
+ 
+ 	name = dm_task_get_name(dmt);
+ 	uuid = dm_task_get_uuid(dmt);
+ 
++	if (info.suspended && ignore_suspended_devices()) {
++		log_debug("%s: Suspended device %s not usable.", dev_name(dev), name);
++		goto out;
++	}
++
+ 	/* FIXME Also check for mirror block_on_error and mpath no paths */
+ 	/* For now, we exclude all mirrors */
+ 
+@@ -166,8 +171,8 @@ int device_is_usable(struct device *dev)
+ 		next = dm_get_next_target(dmt, next, &start, &length,
+ 					  &target_type, &params);
+ 		/* Skip if target type doesn't match */
+-		if (target_type && !strcmp(target_type, "mirror")) {
+-			log_debug("%s: Mirror device not usable.", dev_name(dev));
++		if (target_type && !strcmp(target_type, "mirror") && ignore_suspended_devices()) {
++			log_debug("%s: Mirror device %s not usable.", dev_name(dev), name);
+ 			goto out;
+ 		}
+ 	} while (next);
+diff --git a/lib/filters/filter-persistent.c b/lib/filters/filter-persistent.c
+index 5a016f8..5e05d2b 100644
+--- a/lib/filters/filter-persistent.c
++++ b/lib/filters/filter-persistent.c
+@@ -279,8 +279,8 @@ static int _lookup_p(struct dev_filter *f, struct device *dev)
+ 		if (!l)
+ 			dm_list_iterate_items(sl, &dev->aliases)
+ 				dm_hash_insert(pf->devices, sl->str, PF_GOOD_DEVICE);
+-		if (ignore_suspended_devices() && !device_is_usable(dev)) {
+-                	log_debug("%s: Skipping (suspended/internal)", dev_name(dev));
++		if (!device_is_usable(dev)) {
++                	log_debug("%s: Skipping unusable device", dev_name(dev));
+ 			return 0;
+ 		}
+ 		return pf->real->passes_filter(pf->real, dev);
