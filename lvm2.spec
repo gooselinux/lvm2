@@ -21,7 +21,7 @@
 Summary: Userland logical volume management tools 
 Name: lvm2
 Version: 2.02.72
-Release: 8%{?dist}
+Release: 8%{?dist}.2
 License: GPLv2
 Group: System Environment/Base
 URL: http://sources.redhat.com/lvm2
@@ -43,6 +43,11 @@ Patch13: lvm2-2_02_73-fix-snapshot-of-mirror-status-check.patch
 Patch14: lvm2-2_02_73-fix-snapshot-of-mirror-deadlock.patch
 Patch15: lvm2-2_02_73-fix-lvconvert-splitmirrors-cluster.patch
 Patch16: lvm2-2_02_73-fix-data-corruption-cluster-mirror-failure.patch
+Patch17: lvm2-2_02_74-fix-cluster-mirrors-nosync-slow-io.patch
+Patch18: lvm2-2_02_74-make-metadata-tags-buffer-dynamic.patch
+Patch19: lvm2-2_02_75-various-fsadm-fixes.patch
+Patch20: lvm2-2_02_76-dynamically-alloc-buffer-in-libdm-report-functions.patch
+patch21: lvm2-2_02_76-fix-fsadm-handling-of-online-filesystem-resize.patch
 
 BuildRequires: libselinux-devel >= 1.30.19-4, libsepol-devel
 BuildRequires: ncurses-devel
@@ -87,6 +92,11 @@ or more physical volumes and creating one or more logical volumes
 %patch14 -p1 -b snapshot-mirror-deadlock
 %patch15 -p1 -b splitmirrors-cluster
 %patch16 -p1 -b corruption-cluster-mirror-failure
+%patch17 -p1 -b cluster-mirrors-nosync-slow-io
+%patch18 -p1 -b metadata-tags-buffer-dynamic
+%patch19 -p1 -b fsadm-fixes
+%patch20 -p1 -b dyn-alloc-libdm-report
+%patch21 -p1 -b fsadm-online-fs
 
 %build
 %define _exec_prefix ""
@@ -472,6 +482,24 @@ the device-mapper event library.
 
 
 %changelog
+* Mon Nov 1 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8.el6_0.2
+- Fix handling of online filesystem resize (using new fsadm return code).
+- Add DIAGNOSTICS section to fsadm man page.
+- Modify fsadm to return different status code for check of mounted filesystem.
+- Fix memory leak of field_id in _output_field function.
+- Allocate buffer for reporting functions dynamically to support long outputs.
+
+* Mon Oct 11 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8.el6_0.1
+- Fix usage of --yes flag for ReiserFS resize in fsadm.
+- Fix detection of mounted filesystems for fsadm when udev is used.
+- Fix assignment of default value to LVM variable in fsadm.
+- Fix support for --yes flag for fsadm.
+- Do not execute lvresize with --dry-run option for fsadm.
+- Fix fsadm return error code from user's break action.
+- Revert to old glibc vsnprintf behaviour in emit_to_buffer() to catch overflow.
+- Allocate buffer for metadata tags dynamically to remove 4k limit.
+- Fix the way regions are marked complete to avoid slow --nosync cmirror I/O.
+
 * Wed Aug 18 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8
 - Fix potential for corruption during cluster mirror device failure.
 - Fix 'lvconvert --splitmirrors' in cluster operation.

@@ -1,0 +1,32 @@
+ WHATS_NEW_DM                 |    8 ++++++--
+ daemons/cmirrord/functions.c |    1 +
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/WHATS_NEW_DM b/WHATS_NEW_DM
+index d7739c4..311f359 100644
+--- a/WHATS_NEW_DM
++++ b/WHATS_NEW_DM
+@@ -1,5 +1,9 @@
+-Version 1.02.54 -
+-================================
++Version 1.02.55 - 24th September 2010
++=====================================
++  Fix the way regions are marked complete to avoid slow --nosync cmirror I/O.
++
++Version 1.02.54 - 18th August 2010
++==================================
+   Fix segfault in regex matcher with characters of ordinal value > 127.
+   Use built-in rule for device aliases: block/ < dm- < disk/ < mapper/ < other.
+ 
+diff --git a/daemons/cmirrord/functions.c b/daemons/cmirrord/functions.c
+index e2a7e6a..1cd2068 100644
+--- a/daemons/cmirrord/functions.c
++++ b/daemons/cmirrord/functions.c
+@@ -1268,6 +1268,7 @@ static int clog_get_resync_work(struct dm_ulog_request *rq, uint32_t originator)
+ 		LOG_SPRINT(lc, "GET - SEQ#=%u, UUID=%s, nodeid = %u:: "
+ 			   "Resync work complete.",
+ 			   rq->seq, SHORT_UUID(lc->uuid), originator);
++		lc->sync_search = lc->region_count + 1;
+ 		return 0;
+ 	}
+ 

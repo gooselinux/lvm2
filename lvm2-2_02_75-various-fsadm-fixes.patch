@@ -1,0 +1,128 @@
+ WHATS_NEW        |    9 +++++++++
+ scripts/fsadm.sh |   52 ++++++++++++++++++++++++++++++++++++----------------
+ 2 files changed, 45 insertions(+), 16 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 872b114..d04a0b4 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,3 +1,12 @@
++Version 2.02.75 -
++=====================================
++  Fix usage of --yes flag for ReiserFS resize in fsadm.
++  Fix detection of mounted filesystems for fsadm when udev is used.
++  Fix assignment of default value to LVM variable in fsadm.
++  Fix support for --yes flag for fsadm.
++  Do not execute lvresize with --dry-run option for fsadm.
++  Fix fsadm return error code from user's break action.
++
+ Version 2.02.74 - 24th September 2010
+ =====================================
+   Revert to old glibc vsnprintf behaviour in emit_to_buffer() to catch overflow.
+diff --git a/scripts/fsadm.sh b/scripts/fsadm.sh
+index e6b8e2f..410aec7 100644
+--- a/scripts/fsadm.sh
++++ b/scripts/fsadm.sh
+@@ -1,6 +1,6 @@
+ #!/bin/bash
+ #
+-# Copyright (C) 2007-2009 Red Hat, Inc. All rights reserved.
++# Copyright (C) 2007-2010 Red Hat, Inc. All rights reserved.
+ #
+ # This file is part of LVM2.
+ #
+@@ -49,9 +49,9 @@ FSCK=fsck
+ XFS_CHECK=xfs_check
+ 
+ # user may override lvm location by setting LVM_BINARY
+-LVM=${LVM_BINARY-lvm}
++LVM=${LVM_BINARY:-lvm}
+ 
+-YES=
++YES=${_FSADM_YES}
+ DRY=0
+ VERB=
+ FORCE=
+@@ -65,6 +65,7 @@ BLOCKCOUNT=
+ MOUNTPOINT=
+ MOUNTED=
+ REMOUNT=
++PROCMOUNTS="/proc/mounts"
+ 
+ IFS_OLD=$IFS
+ # without bash $'\n'
+@@ -125,11 +126,17 @@ cleanup() {
+ 	IFS=$IFS_OLD
+ 	trap 2
+ 
+-	# start LVRESIZE with the filesystem modification flag
+-	# and allow recursive call of fsadm
+-	unset FSADM_RUNNING
+-	test "$DO_LVRESIZE" -eq 2 && exec $LVM lvresize $VERB -r -L$(( $NEWSIZE / 1048576 )) $VOLUME
+-	exit ${1:-0}
++	if [ "$DO_LVRESIZE" -eq 2 ]; then
++		# start LVRESIZE with the filesystem modification flag
++		# and allow recursive call of fsadm
++		_FSADM_YES=$YES
++		export _FSADM_YES
++		unset FSADM_RUNNING
++		dry exec $LVM lvresize $VERB $FORCE -r -L${NEWSIZE}b $VOLUME_ORIG
++	fi
++
++	# error exit status for break
++	exit ${1:-1}
+ }
+ 
+ # convert parameter from Exa/Peta/Tera/Giga/Mega/Kilo/Bytes and blocks
+@@ -158,10 +165,15 @@ decode_size() {
+ # detect filesystem on the given device
+ # dereference device name if it is symbolic link
+ detect_fs() {
+-        VOLUME=${1#/dev/}
++	VOLUME_ORIG=$1
++	VOLUME=${1#/dev/}
+ 	VOLUME=$($READLINK $READLINK_E "/dev/$VOLUME") || error "Cannot get readlink $1"
+-	# strip newline from volume name
+-	VOLUME=${VOLUME%%$NL}
++	RVOLUME=$VOLUME
++	case "$RVOLUME" in
++	  /dev/dm-[0-9]*)
++		read </sys/block/${RVOLUME#/dev/}/dm/name SYSVOLUME 2>&1 && VOLUME="/dev/mapper/$SYSVOLUME"
++		;;
++	esac
+ 	# use /dev/null as cache file to be sure about the result
+ 	# not using option '-o value' to be compatible with older version of blkid
+ 	FSTYPE=$($BLKID -c /dev/null -s TYPE "$VOLUME") || error "Cannot get FSTYPE of \"$VOLUME\""
+@@ -171,11 +183,19 @@ detect_fs() {
+ }
+ 
+ # check if the given device is already mounted and where
++# FIXME: resolve swap usage and device stacking
+ detect_mounted()  {
+-	$MOUNT >/dev/null || error "Cannot detect mounted device $VOLUME"
+-	MOUNTED=$($MOUNT | $GREP "$VOLUME")
+-	MOUNTED=${MOUNTED##* on }
+-	MOUNTED=${MOUNTED% type *} # allow type in the mount name
++	test -e $PROCMOUNTS || error "Cannot detect mounted device $VOLUME"
++
++	MOUNTED=$($GREP ^"$VOLUME" $PROCMOUNTS)
++
++	# for empty string try again with real volume name
++	test -z "$MOUNTED" && MOUNTED=$($GREP ^"$RVOLUME" $PROCMOUNTS)
++
++	# cut device name prefix and trim everything past mountpoint
++	# echo translates \040 to spaces
++	MOUNTED=${MOUNTED#* }
++	MOUNTED=$(echo -n -e ${MOUNTED%% *})
+ 	test -n "$MOUNTED"
+ }
+ 
+@@ -280,7 +300,7 @@ resize_reiser() {
+ 	decode_size $1 $BLOCKSIZE
+ 	verbose "Resizing \"$VOLUME\" $BLOCKCOUNT -> $NEWBLOCKCOUNT blocks ($NEWSIZE bytes, bs: $NEWBLOCKCOUNT)"
+ 	if [ -n "$YES" ]; then
+-		dry echo y | $RESIZE_REISER -s $NEWSIZE "$VOLUME"
++		echo y | dry $RESIZE_REISER -s $NEWSIZE "$VOLUME"
+ 	else
+ 		dry $RESIZE_REISER -s $NEWSIZE "$VOLUME"
+ 	fi
