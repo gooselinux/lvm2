@@ -1,0 +1,141 @@
+ WHATS_NEW             |    1 +
+ lib/misc/lvm-string.c |   19 +++++++++++++++++++
+ lib/misc/lvm-string.h |    1 +
+ man/lvm.8.in          |    6 +++++-
+ tools/lvmcmdline.c    |    2 +-
+ tools/toollib.c       |    8 ++++----
+ 6 files changed, 31 insertions(+), 6 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index b728bde..8fa151f 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.77
+ ===================================
++  Remove tag length restriction and allow / = ! : # & characters.
+   Support repetition of --addtag and --deltag arguments.
+   Add infrastructure for specific cmdline arguments to be repeated in groups.
+   Split the_args cmdline arguments and values into arg_props and arg_values.
+diff --git a/lib/misc/lvm-string.c b/lib/misc/lvm-string.c
+index 82a3e94..365190a 100644
+--- a/lib/misc/lvm-string.c
++++ b/lib/misc/lvm-string.c
+@@ -221,6 +221,25 @@ void unescape_double_quotes(char *src)
+ }
+ 
+ /*
++ * A-Za-z0-9._-+/=!:&#
++ */
++int validate_tag(const char *n)
++{
++	register char c;
++	register int len = 0;
++
++	if (!n || !*n)
++		return 0;
++
++	while ((len++, c = *n++))
++		if (!isalnum(c) && c != '.' && c != '_' && c != '-' && c != '+' && c != '/'
++		    && c != '=' && c != '!' && c != ':' && c != '&' && c != '#')
++			return 0;
++
++	return 1;
++}
++
++/*
+  * Device layer names are all of the form <vg>-<lv>-<layer>, any
+  * other hyphens that appear in these names are quoted with yet
+  * another hyphen.  The top layer of any device has no layer
+diff --git a/lib/misc/lvm-string.h b/lib/misc/lvm-string.h
+index 35d9245..42f156b 100644
+--- a/lib/misc/lvm-string.h
++++ b/lib/misc/lvm-string.h
+@@ -33,6 +33,7 @@ char *build_dm_uuid(struct dm_pool *mem, const char *lvid,
+ 		    const char *layer);
+ 
+ int validate_name(const char *n);
++int validate_tag(const char *n);
+ 
+ int apply_lvname_restrictions(const char *name);
+ int is_reserved_lvname(const char *name);
+diff --git a/man/lvm.8.in b/man/lvm.8.in
+index e38ce4f..37ebdab 100644
+--- a/man/lvm.8.in
++++ b/man/lvm.8.in
+@@ -205,6 +205,7 @@ is mounted read-only when the script runs.
+ .TP
+ \fB--addtag tag\fP
+ Add the tag \fBtag\fP to a PV, VG or LV.  
++Supply this argument multiple times to add more than one tag at once.
+ A tag is a word that can be used to group LVM2 objects of the same type 
+ together. 
+ Tags can be given on the command line in place of PV, VG or LV 
+@@ -221,10 +222,13 @@ Only the new LVM2 metadata format supports tagging: objects using the
+ LVM1 metadata format cannot be tagged because the on-disk format does not
+ support it.
+ Snapshots cannot be tagged.
+-Characters allowed in tags are: A-Z a-z 0-9 _ + . -
++Characters allowed in tags are: A-Z a-z 0-9 _ + . - and 
++as of version 2.02.78 the following characters are also
++accepted: / = ! : # &
+ .TP
+ \fB--deltag tag\fP
+ Delete the tag \fBtag\fP from a PV, VG or LV, if it's present.
++Supply this argument multiple times to remove more than one tag at once.
+ .TP
+ \fB--alloc AllocationPolicy\fP
+ The allocation policy to use: \fBcontiguous\fP, \fBcling\fP, \fBnormal\fP, \fBanywhere\fP or \fBinherit\fP.
+diff --git a/tools/lvmcmdline.c b/tools/lvmcmdline.c
+index e2b2eb8..482ea72 100644
+--- a/tools/lvmcmdline.c
++++ b/tools/lvmcmdline.c
+@@ -418,7 +418,7 @@ int tag_arg(struct cmd_context *cmd __attribute__((unused)), struct arg_values *
+ 	if (*pos == '@')
+ 		pos++;
+ 
+-	if (!validate_name(pos))
++	if (!validate_tag(pos))
+ 		return 0;
+ 
+ 	av->value = pos;
+diff --git a/tools/toollib.c b/tools/toollib.c
+index bdb52d5..ce05f6b 100644
+--- a/tools/toollib.c
++++ b/tools/toollib.c
+@@ -222,7 +222,7 @@ int process_each_lv(struct cmd_context *cmd, int argc, char **argv,
+ 			vgname = lv_name;
+ 
+ 			if (*vgname == '@') {
+-				if (!validate_name(vgname + 1)) {
++				if (!validate_tag(vgname + 1)) {
+ 					log_error("Skipping invalid tag %s",
+ 						  vgname);
+ 					continue;
+@@ -528,7 +528,7 @@ int process_each_vg(struct cmd_context *cmd, int argc, char **argv,
+ 		for (; opt < argc; opt++) {
+ 			vg_name = argv[opt];
+ 			if (*vg_name == '@') {
+-				if (!validate_name(vg_name + 1)) {
++				if (!validate_tag(vg_name + 1)) {
+ 					log_error("Skipping invalid tag %s",
+ 						  vg_name);
+ 					if (ret_max < EINVALID_CMD_LINE)
+@@ -697,7 +697,7 @@ int process_each_pv(struct cmd_context *cmd, int argc, char **argv,
+ 			if (*argv[opt] == '@') {
+ 				tagname = argv[opt] + 1;
+ 
+-				if (!validate_name(tagname)) {
++				if (!validate_tag(tagname)) {
+ 					log_error("Skipping invalid tag %s",
+ 						  tagname);
+ 					if (ret_max < EINVALID_CMD_LINE)
+@@ -1110,7 +1110,7 @@ struct dm_list *create_pv_list(struct dm_pool *mem, struct volume_group *vg, int
+ 	for (i = 0; i < argc; i++) {
+ 		if (*argv[i] == '@') {
+ 			tagname = argv[i] + 1;
+-			if (!validate_name(tagname)) {
++			if (!validate_tag(tagname)) {
+ 				log_error("Skipping invalid tag %s", tagname);
+ 				continue;
+ 			}

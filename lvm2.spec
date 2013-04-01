@@ -21,7 +21,7 @@
 Summary: Userland logical volume management tools 
 Name: lvm2
 Version: 2.02.72
-Release: 8%{?dist}.3
+Release: 8%{?dist}.4
 License: GPLv2
 Group: System Environment/Base
 URL: http://sources.redhat.com/lvm2
@@ -53,6 +53,7 @@ Patch23: lvm2-2_02_76-fix-fsadm-handling-of-online-filesystem-resize.patch
 Patch24: lvm2-2_02_76-fix-regex-optimiser-rhs-or-nodes.patch
 Patch25: lvm2-2_02_77-fix-fsadm-mounted-fs-detect-and-do-not-require-f-for-resize.patch
 Patch26: lvm2-2_02_77-add-support-for-cmd-arg-repetition-addtag-deltag.patch
+Patch27: lvm2-2_02_77-remove-tag-length-restriction-and-allow-special-chars.patch
 
 BuildRequires: libselinux-devel >= 1.30.19-4, libsepol-devel
 BuildRequires: ncurses-devel
@@ -107,6 +108,7 @@ or more physical volumes and creating one or more logical volumes
 %patch24 -p1 -b refex-optimiser-rhs
 %patch25 -p1 -b fsadm-mounted-fs-and-f-for-resize
 %patch26 -p1 -b cmd-arg-repetition
+%patch27 -p1 -b tag-length-and-special-chars
 
 %build
 %define _exec_prefix ""
@@ -492,6 +494,9 @@ the device-mapper event library.
 
 
 %changelog
+* Thu Dec 9 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8.el6_0.4
+- Remove tag length restriction and allow / = ! : # & characters.
+
 * Fri Nov 12 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8.el6_0.3
 - Support repetition of --addtag and --deltag arguments.
 - Add infrastructure for specific cmdline arguments to be repeated in groups.
