@@ -3,11 +3,11 @@
  2 files changed, 51 insertions(+), 11 deletions(-)
 
 diff --git a/WHATS_NEW_DM b/WHATS_NEW_DM
-index 311f359..2de31ef 100644
+index 311f359..88b88ad 100644
 --- a/WHATS_NEW_DM
 +++ b/WHATS_NEW_DM
 @@ -1,3 +1,11 @@
-+Version 1.02.57
++Version 1.02.57 - 8th November 2010
 +===================================
 +  Fix memory leak of field_id in _output_field function.
 +  Allocate buffer for reporting functions dynamically to support long outputs.

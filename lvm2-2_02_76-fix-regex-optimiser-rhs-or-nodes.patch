@@ -1,0 +1,69 @@
+ WHATS_NEW              |    3 ++-
+ libdm/regex/parse_rx.c |   12 ++++++++----
+ 2 files changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 0c5e7a4..95d5115 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+-Version 2.02.76 -
++Version 2.02.76 - 8th November 2010
+ ===================================
++  Fix regex optimiser not to ignore RHS of OR nodes in _find_leftmost_common.
+   Fix handling of online filesystem resize (using new fsadm return code).
+   Add DIAGNOSTICS section to fsadm man page.
+   Modify fsadm to return different status code for check of mounted filesystem.
+diff --git a/libdm/regex/parse_rx.c b/libdm/regex/parse_rx.c
+index 9f3e164..ea3922f 100644
+--- a/libdm/regex/parse_rx.c
++++ b/libdm/regex/parse_rx.c
+@@ -473,16 +473,19 @@ static int _find_leftmost_common(struct rx_node *or,
+ 	unsigned left_depth = _depth(left, leftmost);
+ 	unsigned right_depth = _depth(right, leftmost);
+ 
+-	while (left_depth > right_depth) {
++	while (left_depth > right_depth && left->type != OR) {
+ 		left = LEFT(left);
+ 		left_depth--;
+ 	}
+ 
+-	while (right_depth > left_depth) {
++	while (right_depth > left_depth && right->type != OR) {
+ 		right = LEFT(right);
+ 		right_depth--;
+ 	}
+ 
++	if (left_depth != right_depth)
++		return 0;
++
+ 	while (left_depth) {
+ 		if (left->type == CAT && right->type == CAT) {
+ 			if (_nodes_equal(LEFT(left), LEFT(right))) {
+@@ -491,6 +494,8 @@ static int _find_leftmost_common(struct rx_node *or,
+ 				return 1;
+ 			}
+ 		}
++		if (left->type == OR || right->type == OR)
++			break;
+ 		left = LEFT(left);
+ 		right = LEFT(right);
+ 		left_depth--;
+@@ -568,8 +573,8 @@ static struct rx_node *_pass(struct dm_pool *mem,
+ 	case QUEST:
+ 		if (!(r->left = _pass(mem, r->left, changed)))
+ 			return_NULL;
+-		break;
+ 
++		break;
+ 	case OR:
+ 		/* It's important we optimise sub nodes first */
+ 		if (!(r->left = _pass(mem, r->left, changed)))
+@@ -577,7 +582,6 @@ static struct rx_node *_pass(struct dm_pool *mem,
+ 
+ 		if (!(r->right = _pass(mem, r->right, changed)))
+ 			return_NULL;
+-
+ 		/*
+ 		 * If rotate_ors changes the tree, left and right are stale,
+ 		 * so just set 'changed' to repeat the search.

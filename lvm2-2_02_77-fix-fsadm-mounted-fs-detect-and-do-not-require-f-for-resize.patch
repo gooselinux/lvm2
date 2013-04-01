@@ -1,0 +1,152 @@
+ WHATS_NEW        |    5 ++++
+ scripts/fsadm.sh |   61 ++++++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 60 insertions(+), 6 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index be0ee4a..b7c6c93 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,3 +1,8 @@
++Version 2.02.77
++===================================
++  Fix fsadm to not require '-f' for resize of unmounted filesystem.
++  Fix fsadm to detect mounted filesystems on older systems.
++
+ Version 2.02.76 - 8th November 2010
+ ===================================
+   Fix regex optimiser not to ignore RHS of OR nodes in _find_leftmost_common.
+diff --git a/scripts/fsadm.sh b/scripts/fsadm.sh
+index b6152c9..0ae0d49 100644
+--- a/scripts/fsadm.sh
++++ b/scripts/fsadm.sh
+@@ -47,6 +47,7 @@ MKDIR=mkdir
+ RMDIR=rmdir
+ BLOCKDEV=blockdev
+ BLKID=blkid
++DATE=date
+ GREP=grep
+ READLINK=readlink
+ READLINK_E="-e"
+@@ -203,6 +204,15 @@ detect_mounted()  {
+ 	# echo translates \040 to spaces
+ 	MOUNTED=${MOUNTED#* }
+ 	MOUNTED=$(echo -n -e ${MOUNTED%% *})
++
++	# for systems with different device names - check also mount output
++	if test -z "$MOUNTED" ; then
++		MOUNTED=$(LANG=C $MOUNT | $GREP ^"$VOLUME")
++		test -z "$MOUNTED" && MOUNTED=$(LANG=C $MOUNT | $GREP ^"$RVOLUME")
++		MOUNTED=${MOUNTED##* on }
++		MOUNTED=${MOUNTED% type *} # allow type in the mount name
++	fi
++
+ 	test -n "$MOUNTED"
+ }
+ 
+@@ -267,7 +277,7 @@ validate_parsing() {
+ ####################################
+ resize_ext() {
+ 	verbose "Parsing $TUNE_EXT -l \"$VOLUME\""
+-	for i in $($TUNE_EXT -l "$VOLUME"); do
++	for i in $(LANG=C $TUNE_EXT -l "$VOLUME"); do
+ 		case "$i" in
+ 		  "Block size"*) BLOCKSIZE=${i##*  } ;;
+ 		  "Block count"*) BLOCKCOUNT=${i##*  } ;;
+@@ -280,8 +290,13 @@ resize_ext() {
+ 	if [ "$NEWBLOCKCOUNT" -lt "$BLOCKCOUNT" -o "$EXTOFF" -eq 1 ]; then
+ 		detect_mounted && verbose "$RESIZE_EXT needs unmounted filesystem" && try_umount
+ 		REMOUNT=$MOUNTED
+-		# CHECKME: after umount resize2fs requires fsck or -f flag.
+-		FSFORCE="-f"
++		if test -n "$MOUNTED" ; then
++			# Forced fsck -f for umounted extX filesystem.
++			case "$-" in
++			  *i*) dry $FSCK $YES -f "$VOLUME" ;;
++			  *) dry $FSCK -f -p "$VOLUME" ;;
++			esac
++		fi
+ 	fi
+ 
+ 	verbose "Resizing filesystem on device \"$VOLUME\" to $NEWSIZE bytes ($BLOCKCOUNT -> $NEWBLOCKCOUNT blocks of $BLOCKSIZE bytes)"
+@@ -297,7 +312,7 @@ resize_reiser() {
+ 	detect_mounted && verbose "ReiserFS resizes only unmounted filesystem" && try_umount
+ 	REMOUNT=$MOUNTED
+ 	verbose "Parsing $TUNE_REISER \"$VOLUME\""
+-	for i in $($TUNE_REISER "$VOLUME"); do
++	for i in $(LANG=C $TUNE_REISER "$VOLUME"); do
+ 		case "$i" in
+ 		  "Blocksize"*) BLOCKSIZE=${i##*: } ;;
+ 		  "Count of blocks"*) BLOCKCOUNT=${i##*: } ;;
+@@ -326,7 +341,7 @@ resize_xfs() {
+ 		temp_mount || error "Cannot mount Xfs filesystem"
+ 	fi
+ 	verbose "Parsing $TUNE_XFS \"$MOUNTPOINT\""
+-	for i in $($TUNE_XFS "$MOUNTPOINT"); do
++	for i in $(LANG=C $TUNE_XFS "$MOUNTPOINT"); do
+ 		case "$i" in
+ 		  "data"*) BLOCKSIZE=${i##*bsize=} ; BLOCKCOUNT=${i##*blocks=} ;;
+ 		esac
+@@ -366,6 +381,15 @@ resize() {
+ 	cleanup 0
+ }
+ 
++####################################
++# Calclulate diff between two dates
++#  LANG=C input is expected the
++#  only one supported
++####################################
++diff_dates() {
++         echo $(( $($DATE -u -d"$1" +%s 2>/dev/null) - $($DATE -u -d"$2" +%s 2>/dev/null) ))
++}
++
+ ###################
+ # Check filesystem
+ ###################
+@@ -375,6 +399,30 @@ check() {
+                 verbose "Skipping filesystem check for device \"$VOLUME\" as the filesystem is mounted on $MOUNTED";
+                 cleanup 3
+         fi
++
++	case "$FSTYPE" in
++	  "ext2"|"ext3"|"ext4")
++		IFS_CHECK=$IFS
++		IFS=$NL
++		for i in $(LANG=C $TUNE_EXT -l "$VOLUME"); do
++			case "$i" in
++			  "Last mount"*) LASTMOUNT=${i##*: } ;;
++			  "Last checked"*) LASTCHECKED=${i##*: } ;;
++			esac
++		done
++		case "$LASTMOUNT" in
++		  *"n/a") ;; # nothing to do - system was not mounted yet
++		  *)
++			LASTDIFF=$(diff_dates $LASTMOUNT $LASTCHECKED)
++			if test "$LASTDIFF" -gt 0 ; then
++				verbose "Filesystem has not been checked after the last mount, using fsck -f"
++				FORCE="-f"
++			fi
++			;;
++		esac
++		IFS=$IFS_CHECK
++	esac
++
+ 	case "$FSTYPE" in
+ 	  "xfs") dry $XFS_CHECK "$VOLUME" ;;
+ 	  *)    # check if executed from interactive shell environment
+@@ -398,7 +446,7 @@ test -n "$FSADM_RUNNING" && exit 0
+ test -n "$TUNE_EXT" -a -n "$RESIZE_EXT" -a -n "$TUNE_REISER" -a -n "$RESIZE_REISER" \
+   -a -n "$TUNE_XFS" -a -n "$RESIZE_XFS" -a -n "$MOUNT" -a -n "$UMOUNT" -a -n "$MKDIR" \
+   -a -n "$RMDIR" -a -n "$BLOCKDEV" -a -n "$BLKID" -a -n "$GREP" -a -n "$READLINK" \
+-  -a -n "$FSCK" -a -n "$XFS_CHECK" -a -n "LVM" \
++  -a -n "$DATE" -a -n "$FSCK" -a -n "$XFS_CHECK" -a -n "LVM" \
+   || error "Required command definitions in the script are missing!"
+ 
+ $LVM version >/dev/null 2>&1 || error "Could not run lvm binary '$LVM'"
+@@ -406,6 +454,7 @@ $($READLINK -e / >/dev/null 2>&1) || READLINK_E="-f"
+ TEST64BIT=$(( 1000 * 1000000000000 ))
+ test $TEST64BIT -eq 1000000000000000 || error "Shell does not handle 64bit arithmetic"
+ $(echo Y | $GREP Y >/dev/null) || error "Grep does not work properly"
++test $($DATE -u -d"Jan 01 00:00:01 1970" +%s) -eq 1 || error "Date translation does not work"
+ 
+ 
+ if [ "$#" -eq 0 ] ; then

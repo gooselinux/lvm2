@@ -21,7 +21,7 @@
 Summary: Userland logical volume management tools 
 Name: lvm2
 Version: 2.02.72
-Release: 8%{?dist}.2
+Release: 8%{?dist}.3
 License: GPLv2
 Group: System Environment/Base
 URL: http://sources.redhat.com/lvm2
@@ -46,8 +46,13 @@ Patch16: lvm2-2_02_73-fix-data-corruption-cluster-mirror-failure.patch
 Patch17: lvm2-2_02_74-fix-cluster-mirrors-nosync-slow-io.patch
 Patch18: lvm2-2_02_74-make-metadata-tags-buffer-dynamic.patch
 Patch19: lvm2-2_02_75-various-fsadm-fixes.patch
-Patch20: lvm2-2_02_76-dynamically-alloc-buffer-in-libdm-report-functions.patch
-patch21: lvm2-2_02_76-fix-fsadm-handling-of-online-filesystem-resize.patch
+Patch20: lvm2-2_02_75-fix-vgchange-to-behave-like-lvchange.patch
+Patch21: lvm2-2_02_76-allow-independent-vgchange-arguments.patch
+Patch22: lvm2-2_02_76-dynamically-alloc-buffer-in-libdm-report-functions.patch
+Patch23: lvm2-2_02_76-fix-fsadm-handling-of-online-filesystem-resize.patch
+Patch24: lvm2-2_02_76-fix-regex-optimiser-rhs-or-nodes.patch
+Patch25: lvm2-2_02_77-fix-fsadm-mounted-fs-detect-and-do-not-require-f-for-resize.patch
+Patch26: lvm2-2_02_77-add-support-for-cmd-arg-repetition-addtag-deltag.patch
 
 BuildRequires: libselinux-devel >= 1.30.19-4, libsepol-devel
 BuildRequires: ncurses-devel
@@ -95,8 +100,13 @@ or more physical volumes and creating one or more logical volumes
 %patch17 -p1 -b cluster-mirrors-nosync-slow-io
 %patch18 -p1 -b metadata-tags-buffer-dynamic
 %patch19 -p1 -b fsadm-fixes
-%patch20 -p1 -b dyn-alloc-libdm-report
-%patch21 -p1 -b fsadm-online-fs
+%patch20 -p1 -b vgchange-behave-like-lvchange 
+%patch21 -p1 -b independent-vgchange-args
+%patch22 -p1 -b dyn-alloc-libdm-report
+%patch23 -p1 -b fsadm-online-fs
+%patch24 -p1 -b refex-optimiser-rhs
+%patch25 -p1 -b fsadm-mounted-fs-and-f-for-resize
+%patch26 -p1 -b cmd-arg-repetition
 
 %build
 %define _exec_prefix ""
@@ -482,6 +492,19 @@ the device-mapper event library.
 
 
 %changelog
+* Fri Nov 12 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8.el6_0.3
+- Support repetition of --addtag and --deltag arguments.
+- Add infrastructure for specific cmdline arguments to be repeated in groups.
+- Split the_args cmdline arguments and values into arg_props and arg_values.
+- Fix fsadm to not require '-f' for resize of unmounted filesystem.
+- Fix fsadm to detect mounted filesystems on older system
+- Fix regex optimiser not to ignore RHS of OR nodes in _find_leftmost_common.
+- Update VG metadata only once in vgchange when making multiple changes.
+- Allow independent vgchange arguments to be used together.
+- Fix vgchange to process -a, --refresh, --monitor and --poll like lvchange.
+- Don't take write lock in vgchange --refresh, --poll or --monitor.
+- Skip dm devices in scan if they contain only error targets or are empty.
+
 * Mon Nov 1 2010 Peter Rajnoha <prajnoha@redhat.com> - 2.02.72-8.el6_0.2
 - Fix handling of online filesystem resize (using new fsadm return code).
 - Add DIAGNOSTICS section to fsadm man page.

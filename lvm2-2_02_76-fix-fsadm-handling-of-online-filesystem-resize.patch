@@ -1,30 +1,25 @@
- WHATS_NEW               |   10 ++++++++--
+ WHATS_NEW               |    3 +++
  lib/activate/activate.c |    2 +-
  lib/misc/lvm-exec.c     |   14 ++++++++++++--
  lib/misc/lvm-exec.h     |    4 ++--
  man/fsadm.8.in          |    7 +++++++
  scripts/fsadm.sh        |   14 ++++++++++++--
  tools/lvresize.c        |   20 +++++++++++++-------
- 7 files changed, 55 insertions(+), 16 deletions(-)
+ 7 files changed, 50 insertions(+), 14 deletions(-)
 
 diff --git a/WHATS_NEW b/WHATS_NEW
-index d04a0b4..a52bf65 100644
+index 0d4292a..bf2bab4 100644
 --- a/WHATS_NEW
 +++ b/WHATS_NEW
-@@ -1,5 +1,11 @@
--Version 2.02.75 -
--=====================================
-+Version 2.02.76 -
-+===================================
+@@ -1,5 +1,8 @@
+ Version 2.02.76 -
+ ===================================
 +  Fix handling of online filesystem resize (using new fsadm return code).
 +  Add DIAGNOSTICS section to fsadm man page.
 +  Modify fsadm to return different status code for check of mounted filesystem.
-+
-+Version 2.02.75 - 25th October 2010
-+===================================
-   Fix usage of --yes flag for ReiserFS resize in fsadm.
-   Fix detection of mounted filesystems for fsadm when udev is used.
-   Fix assignment of default value to LVM variable in fsadm.
+   Update VG metadata only once in vgchange when making multiple changes.
+   Allow independent vgchange arguments to be used together.
+   Fix vgchange to process -a, --refresh, --monitor and --poll like lvchange.
 diff --git a/lib/activate/activate.c b/lib/activate/activate.c
 index 049f9fa..5722db8 100644
 --- a/lib/activate/activate.c
@@ -118,7 +113,7 @@ index 40e6971..eeec2d3 100644
  "fsadm \-e \-y resize /dev/vg/test 1000M" tries to resize the filesystem
  on logical volume /dev/vg/test. If /dev/vg/test contains ext2/ext3/ext4
 diff --git a/scripts/fsadm.sh b/scripts/fsadm.sh
-index 410aec7..4131f13 100644
+index ee4c39b..b6152c9 100644
 --- a/scripts/fsadm.sh
 +++ b/scripts/fsadm.sh
 @@ -23,6 +23,11 @@
@@ -161,8 +156,8 @@ index 410aec7..4131f13 100644
 +        fi
  	case "$FSTYPE" in
  	  "xfs") dry $XFS_CHECK "$VOLUME" ;;
- 	  *) dry $FSCK $YES "$VOLUME" ;;
-@@ -376,6 +385,7 @@ check() {
+ 	  *)    # check if executed from interactive shell environment
+@@ -380,6 +389,7 @@ check() {
  # start point of this script
  # - parsing parameters
  #############################

@@ -1,0 +1,198 @@
+ WHATS_NEW                  |   10 ++++++-
+ lib/activate/dev_manager.c |   19 +++++++++++++++-
+ tools/lvchange.c           |    6 ++++-
+ tools/vgchange.c           |   52 +++++++++++++++++++++++++++++++++++--------
+ 4 files changed, 73 insertions(+), 14 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 4bae825..f4aa18a 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,11 @@
+-Version 2.02.75 -
+-=====================================
++Version 2.02.76 -
++===================================
++  Fix vgchange to process -a, --refresh, --monitor and --poll like lvchange.
++
++Version 2.02.75 - 25th October 2010
++===================================
++  Don't take write lock in vgchange --refresh, --poll or --monitor.
++  Skip dm devices in scan if they contain only error targets or are empty
+   Better support of noninteractive shell execution of fsadm.
+   Fix usage of --yes flag for ReiserFS resize in fsadm.
+   Fix detection of mounted filesystems for fsadm when udev is used.
+diff --git a/lib/activate/dev_manager.c b/lib/activate/dev_manager.c
+index 4fe98e5..9247e89 100644
+--- a/lib/activate/dev_manager.c
++++ b/lib/activate/dev_manager.c
+@@ -135,10 +135,11 @@ int device_is_usable(struct device *dev)
+ 	char *target_type = NULL;
+ 	char *params, *vgname = NULL, *lvname, *layer;
+ 	void *next = NULL;
++	int only_error_target = 1;
+ 	int r = 0;
+ 
+ 	if (!(dmt = dm_task_create(DM_DEVICE_STATUS))) {
+-		log_error("Failed to allocate dm_task struct to check dev status");
++		log_error("Failed to create dm_task struct to check dev status");
+ 		return 0;
+ 	}
+ 
+@@ -159,6 +160,11 @@ int device_is_usable(struct device *dev)
+ 	name = dm_task_get_name(dmt);
+ 	uuid = dm_task_get_uuid(dmt);
+ 
++	if (!info.target_count) {
++		log_debug("%s: Empty device %s not usable.", dev_name(dev), name);
++		goto out;
++	}
++
+ 	if (info.suspended && ignore_suspended_devices()) {
+ 		log_debug("%s: Suspended device %s not usable.", dev_name(dev), name);
+ 		goto out;
+@@ -175,8 +181,19 @@ int device_is_usable(struct device *dev)
+ 			log_debug("%s: Mirror device %s not usable.", dev_name(dev), name);
+ 			goto out;
+ 		}
++
++		if (target_type && strcmp(target_type, "error"))
++			only_error_target = 0;
+ 	} while (next);
+ 
++	/* Skip devices consisting entirely of error targets. */
++	/* FIXME Deal with device stacked above error targets? */
++	if (only_error_target) {
++		log_debug("%s: Error device %s not usable.",
++			  dev_name(dev), name);
++		goto out;
++	}
++
+ 	/* FIXME Also check dependencies? */
+ 
+ 	/* Check internal lvm devices */
+diff --git a/tools/lvchange.c b/tools/lvchange.c
+index 340c140..99adb3d 100644
+--- a/tools/lvchange.c
++++ b/tools/lvchange.c
+@@ -714,7 +714,7 @@ static int lvchange_single(struct cmd_context *cmd, struct logical_volume *lv,
+ 
+ int lvchange(struct cmd_context *cmd, int argc, char **argv)
+ {
+-	int update = /* options other than -a, --refresh or --monitor */
++	int update = /* options other than -a, --refresh, --monitor or --poll */
+ 		arg_count(cmd, contiguous_ARG) || arg_count(cmd, permission_ARG) ||
+ 		arg_count(cmd, readahead_ARG) || arg_count(cmd, persistent_ARG) ||
+ 		arg_count(cmd, addtag_ARG) || arg_count(cmd, deltag_ARG) ||
+@@ -731,6 +731,10 @@ int lvchange(struct cmd_context *cmd, int argc, char **argv)
+ 		return EINVALID_CMD_LINE;
+ 	}
+ 
++	if (arg_count(cmd, available_ARG) && arg_count(cmd, refresh_ARG)) {
++		log_error("Only one of -a and --refresh permitted.");
++		return EINVALID_CMD_LINE;
++	}
+ 
+ 	if ((arg_count(cmd, ignorelockingfailure_ARG) ||
+ 	     arg_count(cmd, sysinit_ARG)) && update) {
+diff --git a/tools/vgchange.c b/tools/vgchange.c
+index 0a9e916..8673d3e 100644
+--- a/tools/vgchange.c
++++ b/tools/vgchange.c
+@@ -179,9 +179,10 @@ static int _vgchange_background_polling(struct cmd_context *cmd, struct volume_g
+ 
+ 	if (lvs_in_vg_activated(vg) && background_polling()) {
+ 	        polled = _poll_lvs_in_vg(cmd, vg);
+-		log_print("Background polling started for %d logical volume(s) "
+-			  "in volume group \"%s\"",
+-			  polled, vg->name);
++		if (polled)
++			log_print("Background polling started for %d logical volume(s) "
++				  "in volume group \"%s\"",
++				  polled, vg->name);
+ 	}
+ 
+ 	return ECMD_PROCESSED;
+@@ -591,13 +592,30 @@ static int vgchange_single(struct cmd_context *cmd, const char *vg_name,
+ 						arg_int_value(cmd, poll_ARG,
+ 						DEFAULT_BACKGROUND_POLLING));
+ 
+-	if (arg_count(cmd, available_ARG))
++	if (arg_count(cmd, available_ARG)) {
+ 		r = _vgchange_available(cmd, vg);
++		if (r != ECMD_PROCESSED)
++			return r;
++	}
++
++	if (arg_count(cmd, refresh_ARG)) {
++		/* refreshes the visible LVs (which starts polling) */
++		r = _vgchange_refresh(cmd, vg);
++		if (r != ECMD_PROCESSED)
++			return r;
++	}
+ 
+-	else if (arg_count(cmd, monitor_ARG))
++	if (!arg_count(cmd, available_ARG) &&
++	    !arg_count(cmd, refresh_ARG) &&
++	    arg_count(cmd, monitor_ARG)) {
++		/* -ay* will have already done monitoring changes */
+ 		r = _vgchange_monitoring(cmd, vg);
++		if (r != ECMD_PROCESSED)
++			return r;
++	}
+ 
+-	else if (arg_count(cmd, poll_ARG))
++	if (!arg_count(cmd, refresh_ARG) &&
++	    arg_count(cmd, poll_ARG))
+ 		r = _vgchange_background_polling(cmd, vg);
+ 
+ 	else if (arg_count(cmd, resizeable_ARG))
+@@ -627,9 +645,6 @@ static int vgchange_single(struct cmd_context *cmd, const char *vg_name,
+ 	else if (arg_count(cmd, clustered_ARG))
+ 		r = _vgchange_clustered(cmd, vg);
+ 
+-	else if (arg_count(cmd, refresh_ARG))
+-		r = _vgchange_refresh(cmd, vg);
+-
+ 	else if (arg_count(cmd, vgmetadatacopies_ARG) ||
+ 		 arg_count(cmd, metadatacopies_ARG))
+ 		r = _vgchange_metadata_copies(cmd, vg);
+@@ -668,12 +683,26 @@ int vgchange(struct cmd_context *cmd, int argc, char **argv)
+ 		return EINVALID_CMD_LINE;
+ 	}
+ 
++	if (arg_count(cmd, available_ARG) && arg_count(cmd, refresh_ARG)) {
++		log_error("Only one of -a and --refresh permitted.");
++		return EINVALID_CMD_LINE;
++	}
++
+ 	if ((arg_count(cmd, ignorelockingfailure_ARG) ||
+ 	     arg_count(cmd, sysinit_ARG)) && !arg_count(cmd, available_ARG)) {
+ 		log_error("Only -a permitted with --ignorelockingfailure and --sysinit");
+ 		return EINVALID_CMD_LINE;
+ 	}
+ 
++	if (arg_count(cmd, available_ARG) &&
++	    (arg_count(cmd, monitor_ARG) || arg_count(cmd, poll_ARG))) {
++		int activate = arg_uint_value(cmd, available_ARG, 0);
++		if (activate == CHANGE_AN || activate == CHANGE_ALN) {
++			log_error("Only -ay* allowed with --monitor or --poll.");
++			return EINVALID_CMD_LINE;
++		}
++	}
++
+ 	if (arg_count(cmd, poll_ARG) && arg_count(cmd, sysinit_ARG)) {
+ 		log_error("Only one of --poll and --sysinit permitted.");
+ 		return EINVALID_CMD_LINE;
+@@ -686,7 +715,10 @@ int vgchange(struct cmd_context *cmd, int argc, char **argv)
+ 	}
+ 
+ 	return process_each_vg(cmd, argc, argv,
+-			       (arg_count(cmd, available_ARG)) ?
++			       (arg_count(cmd, available_ARG) ||
++				arg_count(cmd, refresh_ARG) ||
++				arg_count(cmd, monitor_ARG) ||
++				arg_count(cmd, poll_ARG)) ?
+ 			       0 : READ_FOR_UPDATE,
+ 			       NULL,
+ 			       &vgchange_single);

@@ -1,14 +1,15 @@
- WHATS_NEW        |    9 +++++++++
- scripts/fsadm.sh |   52 ++++++++++++++++++++++++++++++++++++----------------
- 2 files changed, 45 insertions(+), 16 deletions(-)
+ WHATS_NEW        |   10 +++++++++
+ scripts/fsadm.sh |   58 ++++++++++++++++++++++++++++++++++++++---------------
+ 2 files changed, 51 insertions(+), 17 deletions(-)
 
 diff --git a/WHATS_NEW b/WHATS_NEW
-index 872b114..d04a0b4 100644
+index 872b114..4bae825 100644
 --- a/WHATS_NEW
 +++ b/WHATS_NEW
-@@ -1,3 +1,12 @@
+@@ -1,3 +1,13 @@
 +Version 2.02.75 -
 +=====================================
++  Better support of noninteractive shell execution of fsadm.
 +  Fix usage of --yes flag for ReiserFS resize in fsadm.
 +  Fix detection of mounted filesystems for fsadm when udev is used.
 +  Fix assignment of default value to LVM variable in fsadm.
@@ -20,7 +21,7 @@ index 872b114..d04a0b4 100644
  =====================================
    Revert to old glibc vsnprintf behaviour in emit_to_buffer() to catch overflow.
 diff --git a/scripts/fsadm.sh b/scripts/fsadm.sh
-index e6b8e2f..410aec7 100644
+index e6b8e2f..ee4c39b 100644
 --- a/scripts/fsadm.sh
 +++ b/scripts/fsadm.sh
 @@ -1,6 +1,6 @@
@@ -126,3 +127,16 @@ index e6b8e2f..410aec7 100644
  	else
  		dry $RESIZE_REISER -s $NEWSIZE "$VOLUME"
  	fi
+@@ -348,7 +368,11 @@ check() {
+ 	detect_mounted && error "Can not fsck device \"$VOLUME\", filesystem mounted on $MOUNTED"
+ 	case "$FSTYPE" in
+ 	  "xfs") dry $XFS_CHECK "$VOLUME" ;;
+-	  *) dry $FSCK $YES "$VOLUME" ;;
++	  *)    # check if executed from interactive shell environment
++		case "$-" in
++		  *i*) dry $FSCK $YES $FORCE "$VOLUME" ;;
++		  *) dry $FSCK $FORCE -p "$VOLUME" ;;
++		esac
+ 	esac
+ }
+ 
